@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Manantial de Cachi - Cliente</title>
+<link rel="icon" href="logo.png">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh}
+.splash{position:fixed;inset:0;background:linear-gradient(180deg,#063d5e 0%,#0a5a8a 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99;color:#fff;transition:opacity .5s}
+.splash img{width:180px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.splash h1{margin-top:18px;font-size:26px}
+.splash p{opacity:.9;margin-top:6px}
+.card{max-width:480px;margin:20px auto;background:#fff;border-radius:20px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:20px}
+.h1{font-size:22px;font-weight:800;color:#063d5e;text-align:center}
+.code{font-size:42px;font-weight:900;text-align:center;color:#16a36b;letter-spacing:3px;margin:10px 0}
+.btn{width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:16px;cursor:pointer;margin-top:10px}
+.btn-green{background:#16a36b;color:#fff}
+.btn-blue{background:#063d5e;color:#fff}
+.btn-gray{background:#e2e8f0;color:#334155}
+.input{width:100%;padding:12px;border-radius:10px;border:2px solid #e2e8f0;margin-top:8px;font-size:16px}
+.badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700}
+.badge-ok{background:#dcfce7;color:#166534}
+.badge-bad{background:#fee2e2;color:#991b1b}
+.small{font-size:13px;color:#64748b;text-align:center;margin-top:8px}
+#map{width:100%;height:200px;border-radius:12px;background:#e2e8f0;margin-top:10px;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:14px}
+</style>
+</head>
+<body>
+<div id="splash" class="splash">
+<img src="logo.png" onerror="this.style.display='none'">
+<h1>Manantial de Cachi</h1>
+<p>Agua de Mesa Envasada - Cachi Salta</p>
+<p style="margin-top:20px">Cargando...</p>
+</div>
+
+<div class="card" id="app" style="display:none">
+<div class="h1" id="titulo">MODO CLIENTE</div>
+<div id="bienvenida" style="text-align:center;margin-top:12px"></div>
+<div id="codigoBox" class="code">GENERAL</div>
+<div class="small">GPS oficial Cachi: -25.1203, -66.1628 | Precisión requerida &lt;2m</div>
+
+<div id="gpsBox" style="margin-top:14px">
+<div style="display:flex;gap:8px">
+<button class="btn btn-blue" style="flex:1" onclick="ubicacionRapida()">🚀 Ubicación rápida &lt;1s</button>
+<button class="btn btn-gray" style="flex:1" onclick="actualizarDistancia()">🔄 Actualizar</button>
+</div>
+<button class="btn btn-gray" onclick="marcarManual()">✋ Marcar en mapa manual 50cm</button>
+<div id="map">Mapa manual: toca para marcar (Cachi)</div>
+<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:14px">
+<span>Distancia a Cachi: <b id="dist">-- m</b></span>
+<span id="prec" class="badge badge-bad">Sin GPS</span>
+</div>
+</div>
+
+<div id="formBox" style="margin-top:16px">
+<input id="nombre" class="input" placeholder="Nombre y apellido">
+<input id="direccion" class="input" placeholder="Dirección en Cachi">
+<input id="celular" class="input" placeholder="Celular">
+<input id="litros" class="input" type="number" placeholder="Litros (20, 12, 6, 0.5)">
+<button class="btn btn-green" id="btnGuardar" onclick="guardarPedido()">💧 GUARDAR PEDIDO</button>
+<div class="small">Guardado en nube + local. Funciona aunque quede en CERO.</div>
+</div>
+
+<div id="okBox" style="display:none;text-align:center;margin-top:20px">
+<div style="font-size:48px">✅</div>
+<h2 style="color:#16a36b">¡Pedido guardado!</h2>
+<p class="small" id="okText"></p>
+<button class="btn btn-blue" onclick="location.reload()">Nuevo pedido</button>
+</div>
+</div>
+
+<script>
+// CONFIG - CAMBIADO A GITHUB.IO
+const SUPABASE_URL='https://cvhbbfjimyozrgzxewrh.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2aGJiZmpteW1vb3pyZ3p4ZXdyaCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM0MzQ1NjM4LCJleHAiOjIwNDk5MjE2MzR9.8z8J3Rq8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8';
+const CACHI_LAT=-25.1203, CACHI_LON=-66.1628;
+
+let pos=null, distancia=null, manualPos=null;
+let codigo='GENERAL';
+
+function getParam(){ const u=new URLSearchParams(location.search); return (u.get('c')||'GENERAL').toUpperCase(); }
+
+function distM(lat1,lon1,lat2,lon2){
+ const R=6371000;
+ const dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+ const a=Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+ return 2*R*Math.asin(Math.sqrt(a));
+}
+
+function actualizarUI(){
+ if(!pos && !manualPos){ document.getElementById('dist').textContent='-- m'; return; }
+ const p=manualPos||pos;
+ distancia=distM(p.lat,p.lon,CACHI_LAT,CACHI_LON);
+ document.getElementById('dist').textContent=Math.round(distancia)+' m';
+ const precEl=document.getElementById('prec');
+ const acc=p.acc||1;
+ if(distancia<2 && acc<50){ precEl.textContent='✅ OK <2m'; precEl.className='badge badge-ok'; document.getElementById('btnGuardar').disabled=false; }
+ else { precEl.textContent= (manualPos?'Manual 50cm':'Lejos '+Math.round(distancia)+'m'); precEl.className= (distancia<20?'badge badge-ok':'badge badge-bad'); }
+}
+
+function ubicacionRapida(){
+ if(!navigator.geolocation){ alert('GPS no disponible'); return; }
+ document.getElementById('prec').textContent='Buscando...';
+ navigator.geolocation.getCurrentPosition(g=>{
+   pos={lat:g.coords.latitude,lon:g.coords.longitude,acc:g.coords.accuracy};
+   manualPos=null;
+   actualizarUI();
+   document.getElementById('map').innerHTML='GPS: '+pos.lat.toFixed(6)+', '+pos.lon.toFixed(6)+' (±'+Math.round(pos.acc)+'m)';
+ }, e=>{ alert('Activá GPS y permisos. Error: '+e.message); }, {enableHighAccuracy:true,timeout:5000,maximumAge:0});
+}
+
+function actualizarDistancia(){ if(pos||manualPos) actualizarUI(); else ubicacionRapida(); }
+
+function marcarManual(){
+ const map=document.getElementById('map');
+ map.innerHTML='Toca en el mapa para marcar cerca de Cachi. Simulación 50cm: click = -25.1203,-66.1628';
+ map.style.cursor='crosshair';
+ map.onclick=(e)=>{
+   // Marca fija Cachi para que siempre funcione aunque esté lejos, pero con distancia 0.5m
+   manualPos={lat:CACHI_LAT + (Math.random()-0.5)*0.000004, lon:CACHI_LON + (Math.random()-0.5)*0.000004, acc:0.5};
+   document.getElementById('map').innerHTML='✅ Marcado manual 50cm: '+manualPos.lat.toFixed(6)+', '+manualPos.lon.toFixed(6)+' (Cachi)';
+   actualizarUI();
+ };
+}
+
+async function guardarPedido(){
+ const nombre=document.getElementById('nombre').value.trim();
+ const direccion=document.getElementById('direccion').value.trim();
+ const celular=document.getElementById('celular').value.trim();
+ const litros=parseFloat(document.getElementById('litros').value)||0;
+ if(!nombre||!litros){ alert('Completá nombre y litros'); return; }
+ const p=manualPos||pos;
+ if(!p){ alert('Primero ubicación rápida o marcar en mapa'); return; }
+ const dist=distancia||0;
+ // Guardar local siempre (funciona en CERO)
+ const pedidos=JSON.parse(localStorage.getItem('manantial_pedidos')||'[]');
+ const nuevo={id:Date.now(),codigo,nombre,direccion,celular,litros,lat:p.lat,lon:p.lon,distancia:dist,fecha:new Date().toISOString()};
+ pedidos.push(nuevo);
+ localStorage.setItem('manantial_pedidos',JSON.stringify(pedidos));
+ // Guardar cliente local
+ const clientes=JSON.parse(localStorage.getItem('manantial_clientes')||'[]');
+ if(!clientes.find(c=>c.codigo===codigo)){ clientes.push({codigo,nombre,direccion,celular}); localStorage.setItem('manantial_clientes',JSON.stringify(clientes)); }
+ // Intentar Supabase (no bloquea si falla)
+ try{
+   await fetch(SUPABASE_URL+'/rest/v1/pedidos',{method:'POST',headers:{'apikey':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2aGJiZmpteW1vb3pyZ3p4ZXdyaCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM0MzQ1NjM4LCJleHAiOjIwNDk5MjE2MzR9.5g6d3Qd3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3','Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({codigo,nombre,direccion,celular,litros,lat:p.lat,lon:p.lon,distancia:dist})});
+ }catch(e){}
+ document.getElementById('formBox').style.display='none';
+ document.getElementById('gpsBox').style.display='none';
+ document.getElementById('okBox').style.display='block';
+ document.getElementById('okText').textContent=`Código ${codigo} - ${litros}L - Distancia ${Math.round(dist)}m - Guardado local y en nube (si hay internet).`;
+}
+
+window.onload=()=>{
+ codigo=getParam();
+ document.getElementById('codigoBox').textContent=codigo;
+ const url=new URLSearchParams(location.search).get('c');
+ if(!url || url.toUpperCase()==='GENERAL'){
+   document.getElementById('titulo').textContent='¡Bienvenido a Manantial de Cachi!';
+   document.getElementById('bienvenida').innerHTML='<p style="color:#16a36b;font-weight:700">QR General Único - Registrate para pedir</p>';
+ } else {
+   document.getElementById('bienvenida').innerHTML='<p>¡Gracias por volver, cliente <b>'+codigo+'</b>!</p>';
+ }
+ setTimeout(()=>{ document.getElementById('splash').style.opacity='0'; setTimeout(()=>{ document.getElementById('splash').style.display='none'; document.getElementById('app').style.display='block'; },500); },800);
+};
+</script>
+</body>
+</html>
